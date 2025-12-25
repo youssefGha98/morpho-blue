@@ -1,0 +1,29 @@
+[project]
+name = "morpho-blue"
+version = "0.1.0"
+description = "Add your description here"
+authors = [
+    { name = "YoussefGha98", email = "gharbi.youssef.619@gmail.com" }
+]
+dependencies = [
+    "pyarrow>=22.0.0",
+    "duckdb>=1.4.3",
+    "numpy>=2.4.0",
+    "pandas>=2.3.3",
+]
+readme = "README.md"
+requires-python = ">= 3.8"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.rye]
+managed = true
+dev-dependencies = []
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/morpho_blue"]
