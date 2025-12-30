@@ -295,7 +295,16 @@ def build_market_ledger_raw(*, events: MarketEventTables) -> MarketLedgerRaw:
         ),
     ]
 
-    concatenated = pa.concat_tables(standardized, promote_options="default")
+    # Filter out empty tables before concatenation
+    non_empty_tables = [t for t in standardized if len(t) > 0]
+    
+    if not non_empty_tables:
+        # Create an empty table with the correct schema
+        schema = market_ledger_raw_schema()
+        empty_data = {field.name: pa.array([], type=field.type) for field in schema}
+        return MarketLedgerRaw(table=pa.table(empty_data, schema=schema))
+    
+    concatenated = pa.concat_tables(non_empty_tables, promote_options="default")
 
     # Sort using Arrow directly (no pandas transition needed)
     sorted_table = pc.take(

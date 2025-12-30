@@ -11,6 +11,7 @@ from morpho_blue.domain.schemas import (
     market_ledger_raw_schema,
     market_ledger_schema,
     market_indicators_schema,
+    attribution_feature_schema,
 )
 
 
@@ -74,14 +75,14 @@ class MarketLedger:
         """Validate schema on initialization."""
         expected = market_ledger_schema()
         if not self.table.schema.equals(expected, check_metadata=False):
-            # Check field names at minimum
+            # Check that all required fields are present (allow extra fields)
             actual_names = set(self.table.schema.names)
             expected_names = set(expected.names)
             missing = expected_names - actual_names
-            extra = actual_names - expected_names
-            if missing or extra:
+            if missing:
+                # Only fail if required fields are missing (extra fields are OK)
                 raise ValueError(
-                    f"Schema mismatch. Missing fields: {missing}. Extra fields: {extra}"
+                    f"Schema mismatch. Missing required fields: {missing}"
                 )
     
     @property
@@ -122,3 +123,43 @@ class MarketIndicators:
     def schema(self) -> pa.Schema:
         """Return the schema."""
         return market_indicators_schema()
+
+
+@dataclass(frozen=True)
+class AttributionFeatures:
+    """
+    Core attribution feature table with comprehensive utilization dynamics.
+    
+    Decomposes utilization changes into contributions from:
+        - Borrow/Repay/Liquidate principal flows
+        - Supply/Withdraw flows
+        - Interest accrual
+        - IRM slope diagnostics
+        - Rolling window aggregations (5m to 365d)
+        - Accounting integrity residuals
+    
+    This is the primary output for utilization attribution analysis.
+    """
+    table: pa.Table
+    
+    def __post_init__(self) -> None:
+        """
+        Validate schema on initialization.
+        
+        Note: Flexible validation since rolling windows generate many dynamic columns.
+        We validate presence of core required fields only.
+        """
+        expected = attribution_feature_schema()
+        actual_names = set(self.table.schema.names)
+        expected_names = set(expected.names)
+        missing = expected_names - actual_names
+        
+        if missing:
+            raise ValueError(
+                f"Attribution feature table missing required fields: {missing}"
+            )
+    
+    @property
+    def schema(self) -> pa.Schema:
+        """Return the base schema (core fields only)."""
+        return attribution_feature_schema()

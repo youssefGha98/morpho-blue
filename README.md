@@ -9,6 +9,9 @@ A Python-based analytics framework for analyzing Morpho Blue lending protocol da
 - 🏦 **Ledger Management**: Track user positions and market states over time
 - 📈 **State Enrichment**: Compute cumulative positions and time-series analytics
 - 💾 **Parquet Storage**: Efficient data storage and querying using Apache Parquet
+- 🎯 **Attribution Analysis**: NEW - Decompose utilization dynamics into flow contributions
+- 📉 **IRM Diagnostics**: NEW - Analyze Interest Rate Model responsiveness and slope
+- ⏱️ **Extended Rolling Windows**: NEW - Metrics from 5min to 365d with volatility attribution
 
 ## Architecture
 
@@ -53,37 +56,72 @@ rye sync
 Explore the demo notebooks to see the analytics in action:
 
 ```bash
+# Basic market indicators
 rye run jupyter notebook notebooks/01_market_indicators_demo.ipynb
+
+# Attribution features (NEW)
+rye run jupyter notebook notebooks/02_attribution_features_demo.ipynb
 ```
 
 ### Using the Indicator Service
 
 ```python
 from morpho_blue.indicator_service import IndicatorService
+from morpho_blue.data.parquet_repository import ParquetRepository
+from pathlib import Path
+import duckdb
 
-# Initialize the service with your data directory
-service = IndicatorService(data_dir="data_examples/morpho/market")
+# Configure paths
+DATA_ROOT = Path("data_examples")
+market_id = "0xbbbbbbbbbb9cc5e90e3b3af64bdaf62c37eeffcb"
 
-# Compute market indicators
-indicators = service.compute_market_indicators()
-print(indicators)
+# Initialize DuckDB connection and repository
+con = duckdb.connect(":memory:")
+repo = ParquetRepository(con=con, root=str(DATA_ROOT))
+service = IndicatorService(repo=repo, con=con)
+
+# Option 1: Build standard indicator dataset
+indicators_table = service.build_market_dataset(market_id=market_id)
+
+# Option 2: Build attribution dataset (fetches data automatically)
+attribution = service.build_attribution_dataset(
+    market_id=market_id,
+    validate=True,
+)
+
+# Option 3: Reuse enriched ledger (more efficient, easier to test)
+# Build ledger once
+ledger = service.build_enriched_ledger(market_id=market_id)
+
+# Use it for both indicators and attribution
+indicators_table = service.build_market_dataset(market_id=market_id)
+attribution = service.build_attribution_dataset(ledger=ledger, validate=True)
+
+# Access as pandas
+df = attribution.table.to_pandas()
+print(df[['utilization_rate', 'contrib_u_from_borrow', 'contrib_u_from_withdraw']].head())
 ```
 
-### Computing Specific Indicators
+### Attribution Analysis Example
 
 ```python
-from morpho_blue.indicators import (
-    compute_utilization_rate,
-    compute_supply_apy,
-    compute_borrow_apy,
-    compute_health_factor
+from morpho_blue.transformations import compute_attribution_features, AttributionWindowSpec
+
+# Direct usage: Compute attribution from an enriched ledger
+attribution_table = compute_attribution_features(
+    ledger=enriched_ledger,
+    windows=AttributionWindowSpec(),  # 5m, 1h, 6h, 24h, 7d, 30d, 90d, 365d
 )
 
-# Calculate utilization rate
-utilization = compute_utilization_rate(
-    total_supply_assets=1000000,
-    total_borrow_assets=750000
-)
+# Analyze utilization contributions
+df = attribution_table.to_pandas()
+
+# Which flows are driving utilization changes?
+print("Utilization contribution from withdrawals (6h):", df['contrib_withdraw_sum_6h'].iloc[-1])
+print("Utilization contribution from borrows (6h):", df['contrib_borrow_sum_6h'].iloc[-1])
+
+# IRM responsiveness
+print("IRM slope (ΔAPR/Δu):", df['irm_slope'].mean())
 ```
 
 ## Project Structure
@@ -159,6 +197,31 @@ Calculated metrics such as:
 - Supply/Borrow APY
 - Health Factor
 - Total Value Locked (TVL)
+
+### Attribution Features (NEW)
+Advanced analytics layer that decomposes utilization dynamics:
+
+**Flow Decomposition**: Break down each event into principal components:
+- `borrow_in_assets`, `repay_out_assets`, `liquidate_repay_assets`
+- `supply_in_assets`, `withdraw_out_assets`, `interest_assets`
+
+**Utilization Attribution**: Quantify how each flow contributes to Δu:
+- `contrib_u_from_borrow`, `contrib_u_from_repay`, `contrib_u_from_liquidate`
+- `contrib_u_from_withdraw`, `contrib_u_from_supply`, `contrib_u_from_interest`
+
+**IRM Diagnostics**: Measure interest rate model responsiveness:
+- `irm_slope`: ΔAPR / Δu
+- `irm_response_to_withdraw`, `irm_response_to_repay`, etc.
+
+**Rolling Windows**: Comprehensive time-based aggregations:
+- Windows: 5min, 1h, 6h, 24h, 7d, 30d, 90d, 365d
+- Metrics: means, maxes, intensities, volatilities, attribution sums
+- Volatility attribution shares: Decompose variance by flow type
+
+**Integrity Checks**: Accounting residuals validate data quality:
+- `delta_u_residual` = actual Δu - predicted Δu from contributions
+
+For more details on the attribution features, see the [attribution demo notebook](notebooks/02_attribution_features_demo.ipynb).
 
 ## Contributing
 

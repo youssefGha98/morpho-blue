@@ -219,3 +219,71 @@ def market_indicators_schema() -> pa.Schema:
     ]
     
     return pa.schema(base_fields + engineered_fields)
+
+
+def attribution_feature_schema() -> pa.Schema:
+    """
+    Core attribution feature table schema with comprehensive utilization dynamics.
+    
+    Extends market_ledger_schema with:
+        - State columns: buffer, headroom metrics, APR
+        - Flow decomposition: borrow_in, repay_out, liquidate_repay, etc.
+        - Utilization contributions: attribution terms for each flow type
+        - Rate dynamics: IRM slope, factor-conditioned responses
+        - Rolling windows: 5m, 1h, 6h, 24h, 7d, 30d, 90d, 365d
+        - Validation: delta_u_residual for integrity checks
+        - Volatility attribution shares
+        - Expanding statistics
+    
+    Note: Schema flexibility - allow additional fields from pandas conversion.
+    This function defines the minimum required fields.
+    """
+    base_fields = list(market_ledger_schema())
+    
+    # A) State columns (levels)
+    state_fields = [
+        pa.field("borrow_apr", pa.float64(), nullable=False),
+        pa.field("buffer", pa.float64(), nullable=False),
+        pa.field("headroom_u90_assets", pa.int64(), nullable=False),
+        pa.field("headroom_u95_assets", pa.int64(), nullable=False),
+    ]
+    
+    # B) Flow decomposition (per-step)
+    flow_fields = [
+        pa.field("borrow_in_assets", pa.float64(), nullable=False),
+        pa.field("repay_out_assets", pa.float64(), nullable=False),
+        pa.field("liquidate_repay_assets", pa.float64(), nullable=False),
+        pa.field("supply_in_assets", pa.float64(), nullable=False),
+        pa.field("withdraw_out_assets", pa.float64(), nullable=False),
+        pa.field("interest_assets", pa.float64(), nullable=False),
+        pa.field("net_borrow_principal_assets", pa.float64(), nullable=False),
+        pa.field("net_supply_assets", pa.float64(), nullable=False),
+    ]
+    
+    # C) Utilization contribution terms
+    contrib_fields = [
+        pa.field("contrib_u_from_borrow", pa.float64(), nullable=False),
+        pa.field("contrib_u_from_repay", pa.float64(), nullable=False),
+        pa.field("contrib_u_from_liquidate", pa.float64(), nullable=False),
+        pa.field("contrib_u_from_withdraw", pa.float64(), nullable=False),
+        pa.field("contrib_u_from_supply", pa.float64(), nullable=False),
+        pa.field("contrib_u_from_interest", pa.float64(), nullable=False),
+        pa.field("delta_u_pred", pa.float64(), nullable=False),
+        pa.field("delta_u_real", pa.float64(), nullable=False),
+        pa.field("delta_u_residual", pa.float64(), nullable=False),
+    ]
+    
+    # D) Rate dynamics + IRM slope
+    rate_dynamics_fields = [
+        pa.field("delta_borrow_apr", pa.float64(), nullable=False),
+        pa.field("irm_slope", pa.float64(), nullable=True),  # Can be NaN
+        pa.field("irm_response_to_withdraw", pa.float64(), nullable=True),
+        pa.field("irm_response_to_repay", pa.float64(), nullable=True),
+        pa.field("irm_response_to_liquidate", pa.float64(), nullable=True),
+    ]
+    
+    # Return base schema - actual table will have many more rolling window columns
+    # that are dynamically generated. PyArrow will infer them from pandas.
+    return pa.schema(
+        base_fields + state_fields + flow_fields + contrib_fields + rate_dynamics_fields
+    )
